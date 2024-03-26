@@ -2,14 +2,14 @@ import math
 import random
 from collections import defaultdict
 
-from connect4_agent import Connect4Agent
+from agent import Agent
 from connect4_random_agent import Connect4RandomAgent
 
 
 depth_factor = 0.1
 
 class MCTSNode:
-    def __init__(self, state, action=None, parent=None,):
+    def __init__(self, state, action=None, parent=None):
         self.state = state
         self.parent = parent
         self.children = []
@@ -21,7 +21,7 @@ class MCTSNode:
 
     def select_child(self):
         # Use the UCB1 formula to select a child node
-        return max(self.children, key=lambda c: c.wins / c.visits + math.sqrt(2 * math.log(self.visits) / c.visits))
+        return max(self.children, key=lambda c: c.wins / c.visits + math.sqrt(math.log(self.visits) / c.visits))
     
     def add_child(self, action):
         new_state = action.sample_next_state()
@@ -35,39 +35,40 @@ class MCTSNode:
         self.visits += 1
         self.wins += result
 
-class Connect4MCTSAgent(Connect4Agent):
-    def __init__(self, iterations=10000,inner_agent:Connect4Agent=Connect4RandomAgent()):
+class Connect4MCTSAgent(Agent):
+    def __init__(self, iterations=10000,inner_agent:Agent=Connect4RandomAgent()):
         self.iterations = iterations
         self.inner_agent = inner_agent
+        self.random_agent = Connect4RandomAgent()
 
     
-    def play(self, initial_state):
+    def _play_logic(self, initial_state):
         root_node = MCTSNode(state=initial_state)
 
         for _ in range(self.iterations):
             node = root_node
             state = initial_state
 
-            choosed_action = None
 
             # Selection
             while node.untried_actions == [] and node.children != []:
                 node = node.select_child()
-                choosed_action = node.action.to_json()
-                state = node.state
+
+            state = node.state
 
             # Expansion
             if node.untried_actions != []:
-                action = random.choice(node.untried_actions)
-                if choosed_action is None:
-                    choosed_action = action.to_json()
+                probas = self.inner_agent.play(node.state)
+                probas ={k:v for k,v in probas.items() if k in node.untried_actions}
+                action = random.choices(list(probas.keys()), weights=probas.values(),k=1)[0]
+                
                 state = action.sample_next_state()
                 node = node.add_child(action)
 
             # Simulation
             game_length = node.depth
             while not state.has_ended:
-                action = self.inner_agent.sample_move(state)
+                action = self.random_agent.sample_move(state)
                 state = action.sample_next_state()
                 game_length += 1
 
@@ -87,8 +88,5 @@ class Connect4MCTSAgent(Connect4Agent):
                 node = node.parent
 
         move_probabilities = {int(child.action.to_json()): child.wins/child.visits for child in root_node.children}
-        # softmax
-        total = sum([math.exp(prob) for prob in move_probabilities.values()])
-        move_probabilities = {action: math.exp(prob) / total for action, prob in move_probabilities.items()}
-
+        
         return move_probabilities

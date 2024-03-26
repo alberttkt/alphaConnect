@@ -1,11 +1,11 @@
-from connect4_agent import Connect4Agent
+from agent import Agent
 import random
 
-class Connect4RandomAgent(Connect4Agent):
+class Connect4RandomAgent(Agent):
     def __init__(self,verbose=False):
         self.verbose = verbose
         
-    def play(self, state):
+    def _play_logic(self, state):
         l= len(state.actions)
         actions = list(state.actions)
         random.shuffle(actions)

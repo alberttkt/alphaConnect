@@ -1,13 +1,13 @@
-from connect4_agent import Connect4Agent
+from agent import Agent
 import time
 
-class Connect4HumanAgent(Connect4Agent):
+class Connect4HumanAgent(Agent):
     next_moves = []
     def __init__(self,verbose=False):
         self.verbose = verbose
         
         
-    def play(self, state):
+    def _play_logic(self, state):
         if self.verbose:
             print(state)
         
