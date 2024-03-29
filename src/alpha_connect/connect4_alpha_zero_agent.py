@@ -2,8 +2,8 @@ import math
 import random
 from collections import defaultdict
 
-from agent import Agent
-from connect4_random_agent import Connect4RandomAgent
+from src.alpha_connect.agent import Agent
+from src.alpha_connect.connect4_random_agent import Connect4RandomAgent
 
 depth_factor = 0.1
 
@@ -22,11 +22,13 @@ class MCTSNode:
 
     def select_child(self, cpuct):
         # Use the UCB1 formula to select a child node, including cpuct for exploration
-        best_value = -float('inf')
+        best_value = -float("inf")
         best_child = None
         for child in self.children:
             # Calculating the UCB1 value
-            ucb1_value = child.wins / child.visits + cpuct * math.sqrt(math.log(self.visits) / child.visits)
+            ucb1_value = child.wins / child.visits + cpuct * math.sqrt(
+                math.log(self.visits) / child.visits
+            )
             if ucb1_value > best_value:
                 best_value = ucb1_value
                 best_child = child
@@ -46,7 +48,9 @@ class MCTSNode:
 
 
 class Connect4AlphaZeroAgent(Agent):
-    def __init__(self, iterations=10000, cpuct=2.0, inner_agent: Agent = Connect4RandomAgent()):
+    def __init__(
+        self, iterations=10000, cpuct=2.0, inner_agent: Agent = Connect4RandomAgent()
+    ):
         self.iterations = iterations
         self.cpuct = cpuct
         self.inner_agent = inner_agent
@@ -66,7 +70,11 @@ class Connect4AlphaZeroAgent(Agent):
             # Expansion
             if node.untried_actions != []:
                 action_probabilities, value = self.inner_agent.play(state)
-                action_probabilities = {k: v for k, v in action_probabilities.items() if k in node.untried_actions}
+                action_probabilities = {
+                    k: v
+                    for k, v in action_probabilities.items()
+                    if k in node.untried_actions
+                }
                 action = max(action_probabilities, key=action_probabilities.get)
 
                 state = action.sample_next_state()
@@ -80,8 +88,12 @@ class Connect4AlphaZeroAgent(Agent):
                 node = node.parent
 
         # Compute move probabilities based on visits
-        move_probabilities = {child.action.to_json(): child.visits for child in root_node.children}
+        move_probabilities = {
+            child.action.to_json(): child.visits for child in root_node.children
+        }
         total_visits = sum(move_probabilities.values())
-        move_probabilities = {k: v / total_visits for k, v in move_probabilities.items()}
+        move_probabilities = {
+            k: v / total_visits for k, v in move_probabilities.items()
+        }
 
         return move_probabilities, 1
