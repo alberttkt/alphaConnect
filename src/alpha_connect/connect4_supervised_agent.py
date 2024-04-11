@@ -6,7 +6,10 @@ from torch import nn
 
 
 class Connect4SupervisedAgent(Agent):
-    def __init__(self, model_path="supervised.ckpt"):
+    def __init__(
+        self,
+        model_path="/Users/alberttroussard/Documents/alpha-connect/data/supervised.ckpt",
+    ):
         self.model = AlphaZeroModel.load_from_checkpoint(model_path).to("mps")
         self.model.eval()
 
@@ -17,4 +20,4 @@ class Connect4SupervisedAgent(Agent):
         )
         distribution = nn.functional.softmax(y_hat, dim=1).flatten()
         d = {i: distribution[i].item() for i in range(len(distribution))}
-        return d, value
+        return d, float(value)

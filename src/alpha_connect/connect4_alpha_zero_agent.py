@@ -2,98 +2,158 @@ import math
 import random
 from collections import defaultdict
 
+import numpy as np
+
 from src.alpha_connect.agent import Agent
 from src.alpha_connect.connect4_random_agent import Connect4RandomAgent
 
-depth_factor = 0.1
-
 
 class MCTSNode:
-    def __init__(self, state, action=None, parent=None, value=0.5):
+    c_puct = 1.0
+
+    def __init__(self, state, player, prior, action=None, parent=None):
         self.state = state
+        self.player = player
         self.parent = parent
+        self.prior = prior
         self.children = []
-        self.wins = 0
-        self.visits = 0
-        self.depth = 0 if parent is None else parent.depth + 1
-        self.untried_actions = list(self.state.actions)
+        self.value_sum = 0
+        self.visit_count = 0
         self.action = action  # Store the action that led to this node. uselfull to give the final move
-        self.value = value
 
-    def select_child(self, cpuct):
-        # Use the UCB1 formula to select a child node, including cpuct for exploration
-        best_value = -float("inf")
-        best_child = None
-        for child in self.children:
-            # Calculating the UCB1 value
-            ucb1_value = child.wins / child.visits + cpuct * math.sqrt(
-                math.log(self.visits) / child.visits
+    def select_child(self):
+        # Use the UCB1 formula to select a child node
+
+        scores = {c: self.ucb_score(c) for c in self.children}
+        return max(scores, key=scores.get)
+
+    def value(self):
+        if self.visit_count == 0:
+            return 0
+        return self.value_sum / self.visit_count
+
+    def ucb_score(self, child):
+        if self.visit_count == 0:
+            return child.prior  # if the node has not been visited, trust the network
+
+        prior_score = (
+            MCTSNode.c_puct
+            * child.prior
+            * math.sqrt(self.visit_count)
+            / (child.visit_count + 1)
+        )
+        value_score = -child.value()
+        return value_score + prior_score
+
+    def expand_node(self, player, probs):
+        for action, prob in probs.items():
+            new_state = action.sample_next_state()
+            child_node = MCTSNode(
+                state=new_state,
+                player=1 - player,
+                action=action,
+                prior=prob,
+                parent=self,
             )
-            if ucb1_value > best_value:
-                best_value = ucb1_value
-                best_child = child
-        return best_child
+            self.children.append(child_node)
 
-    def add_child(self, action, value):
-        new_state = action.sample_next_state()
-        child_node = MCTSNode(state=new_state, action=action, parent=self, value=value)
+    def get_distribution(self, temperature):
+        """
+        Select action according to the visit count distribution and the temperature.
+        """
+        action_to_visit_counts = {
+            child.action: child.visit_count for child in self.children
+        }
 
-        self.untried_actions.remove(action)
-        self.children.append(child_node)
-        return child_node
+        if temperature == 0:
+            return {max(action_to_visit_counts, key=action_to_visit_counts.get): 1.0}
+        elif temperature == float("inf"):
+            return {
+                action: 1.0 / len(action_to_visit_counts)
+                for action in action_to_visit_counts
+            }
+        else:
+            counts = np.array(
+                [
+                    count ** (1 / temperature)
+                    for count in action_to_visit_counts.values()
+                ]
+            )
+            probs = counts / counts.sum()
+            a = {
+                action.to_json(): prob
+                for action, prob in zip(action_to_visit_counts.keys(), probs)
+            }
 
-    def update(self, result):
-        self.visits += 1
-        self.wins += result
+            return a
+
+    def update(self, value, player):
+        self.visit_count += 1
+        self.value_sum += value if player == self.player else -value
+
+    def expanded(self):
+        return self.children == []
+
+    def has_parent(self):
+        return self.parent is not None
+
+    def is_leaf(self):
+        return self.children == []
+
+    def __repr__(self):
+        """
+        Debugger pretty print node info
+        """
+        prior = "{0:.2f}".format(self.prior)
+        return " Prior: {} Count: {} Value: {} {}".format(
+            prior, self.visit_count, self.value(), self.state.to_json()
+        )
 
 
 class Connect4AlphaZeroAgent(Agent):
     def __init__(
-        self, iterations=10000, cpuct=2.0, inner_agent: Agent = Connect4RandomAgent()
+        self,
+        inner_agent: Agent = Connect4RandomAgent(),
+        iterations=10000,
+        temperature=1,
     ):
         self.iterations = iterations
-        self.cpuct = cpuct
         self.inner_agent = inner_agent
+        self.temperature = temperature
 
     def _play_logic(self, initial_state):
-        root_node = MCTSNode(state=initial_state)
+        root_node = MCTSNode(initial_state, initial_state.player, 0)
+
+        move_probabilities, value = self.inner_agent.play(initial_state)
+        root_node.expand_node(initial_state.player, move_probabilities)
 
         for _ in range(self.iterations):
             node = root_node
             state = initial_state
 
             # Selection
-            while node.untried_actions == [] and node.children != []:
-                node = node.select_child(self.cpuct)
-                state = node.state
+            while not node.is_leaf():
+                node = node.select_child()
 
-            # Expansion
-            if node.untried_actions != []:
-                action_probabilities, value = self.inner_agent.play(state)
-                action_probabilities = {
-                    k: v
-                    for k, v in action_probabilities.items()
-                    if k in node.untried_actions
-                }
-                action = max(action_probabilities, key=action_probabilities.get)
+            state = node.state
 
-                state = action.sample_next_state()
-                node = node.add_child(action, value)
+            # Simulation
+            if not state.has_ended:
+                move_probabilities, value = self.inner_agent.play(state)
+                # rescale value from 0,1 to -1,1
+                value = 2 * value - 1
+                node.expand_node(state.player, move_probabilities)
+                player = state.player
+            else:
+                value = state.reward[initial_state.player]
+                player = initial_state.player
 
             # Backpropagation
-            while node is not None:
-                node.visits += 1
-                node.wins += value  # Assuming value is the reward
-                value = -value  # Negate the value for the opponent
+            while node.has_parent():
+                node.update(value, player)
                 node = node.parent
+            root_node.update(value, player)
 
-        # Compute move probabilities based on visits
-        move_probabilities = {
-            child.action.to_json(): child.visits for child in root_node.children
-        }
-        total_visits = sum(move_probabilities.values())
-        move_probabilities = {
-            k: v / total_visits for k, v in move_probabilities.items()
-        }
+        move_probabilities = root_node.get_distribution(self.temperature)
 
         return move_probabilities, 1

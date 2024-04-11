@@ -1,3 +1,4 @@
+import random
 from src.alpha_connect.agent import Agent
 from game import ConnectState
 
@@ -24,11 +25,13 @@ class Connect4Game:
             moves_proba_dict, value = self.agent1.play(self.state)
         else:
             moves_proba_dict, value = self.agent2.play(self.state)
-
-        for move in sorted(moves_proba_dict, key=moves_proba_dict.get, reverse=True):
-            return Connect4Game(self.agent1, self.agent2, move.sample_next_state())
-
-        raise Exception("No moves available")
+        max_proba = max(moves_proba_dict.values())
+        moves = [
+            move for move in moves_proba_dict if moves_proba_dict[move] == max_proba
+        ]
+        return Connect4Game(
+            self.agent1, self.agent2, random.choice(moves).sample_next_state()
+        )
 
     def get_value(self, column, row):
         return self.state.get_tensors()[0][row][column]

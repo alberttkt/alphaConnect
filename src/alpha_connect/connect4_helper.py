@@ -3,6 +3,10 @@ from game import *
 import torch
 from src.alpha_connect.connect4_game import Connect4Game
 import random
+from game import ConnectState
+
+
+State = ConnectState
 
 
 def show_board(state, file=sys.stdout):
@@ -14,8 +18,8 @@ def show_board(state, file=sys.stdout):
         print(file=file)
 
 
-def play_game(agent1, agent2):
-    gamestate = Connect4Game(agent1, agent2)
+def play_game(agent1, agent2, starting_state=State.sample_initial_state()):
+    gamestate = Connect4Game(agent1, agent2, starting_state)
     while not gamestate.has_ended():
         gamestate = gamestate.play()
     show_board(gamestate.state)
