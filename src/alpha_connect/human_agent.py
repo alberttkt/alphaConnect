@@ -4,6 +4,9 @@ from .agent import Agent
 class HumanAgent(Agent):
     next_moves = []
 
+    def __init__(self, verbose=False):
+        self.verbose = verbose
+
     def _play_logic(self, state):
         if self.verbose:
             print(state)

@@ -1,17 +1,17 @@
 import torch
 from .agent import Agent
 from .helper import state_to_supervised_input
-from .model import AlphaZeroModel
+from .model import AlphaZeroModelConnect4
 from torch import nn
 
 
 class NeuralNetAgent(Agent):
     def __init__(
         self,
-        model: AlphaZeroModel = None,
+        model: AlphaZeroModelConnect4 = None,
     ):
         if model is None:
-            model = AlphaZeroModel.load_from_checkpoint(
+            model = AlphaZeroModelConnect4.load_from_checkpoint(
                 "/Users/alberttroussard/Documents/alpha-connect/data/supervised.ckpt"
             )
         self.model = model.to("mps")

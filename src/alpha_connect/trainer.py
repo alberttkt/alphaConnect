@@ -27,7 +27,7 @@ class Trainer:
 
     def exceute_episode(self):
         train_examples = []
-        state = ConnectState.sample_initial_state()
+        state = GameChoice.get_game().sample_initial_state()
 
         agents = self.agents.copy()
         random.shuffle(agents)
@@ -40,7 +40,8 @@ class Trainer:
             action_probs, _ = agents[current_player].play(state)
 
             network_input = state_to_supervised_input(state)
-            action_probs_list = [action_probs.get(i, 0) for i in range(7)]
+            int_action_probs = {k.to_json(): v for k, v in action_probs.items()}
+            action_probs_list = [int_action_probs.get(i, 0) for i in range(7)]
             train_examples.append((network_input, current_player, action_probs_list))
 
             action = random.choices(
@@ -64,28 +65,33 @@ class Trainer:
                         (hist_state, hist_action_probs, reward[hist_current_player])
                     )
 
-                print(f"Game ended after {i} steps")
-                return ret
+                # print(f"Game ended after {i} steps")
+                return ret, self.agents.index(agents[current_player])
 
     def learn(self):
         for i in range(1, self.args["numIters"] + 1):
             print("{}/{}".format(i, self.args["numIters"]))
 
             train_examples = []
-
+            winner_dict = {}
             for eps in tqdm(range(self.args["numEps"])):
-                iteration_train_examples = self.exceute_episode()
+                iteration_train_examples, winner_index = self.exceute_episode()
+                if winner_index in winner_dict:
+                    winner_dict[winner_index] += 1
+                else:
+                    winner_dict[winner_index] = 1
                 train_examples.extend(iteration_train_examples)
 
+            print("Winners: ", winner_dict)
             shuffle(train_examples)
             self.train(train_examples)
+
             filename = self.args["checkpoint_path"]
-            self.save_checkpoint(folder=".", filename=filename)
+            self.save_checkpoint(folder="../data", filename=filename)
+
             self.agents = self.agents[1::]
             self.agents.append(
-                AlphaZeroAgent(
-                    NeuralNetAgent(self.new_model), self.args["num_simulations"]
-                )
+                AlphaZeroAgent(NeuralNetAgent(self.model), self.args["num_simulations"])
             )
 
     def train(self, examples):
@@ -105,15 +111,9 @@ class Trainer:
                 )
                 boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
                 boards = torch.FloatTensor(np.array(boards).astype(np.float64))
-                # print(pis)
+
                 target_pis = torch.FloatTensor(np.array(pis))
                 target_vs = torch.FloatTensor(np.array(vs).astype(np.float64))
-
-                # predict
-
-                # boards = boards.contiguous().cuda()
-                # target_pis = target_pis.contiguous().cuda()
-                # target_vs = target_vs.contiguous().cuda()
 
                 # compute output
                 model_input = boards.reshape(-1, 3, 6, 7).to("mps")
@@ -138,12 +138,12 @@ class Trainer:
             print("Examples:")
             print(out_pi[0].detach())
             print(target_pis[0])
+            print(out_v[0].detach())
+            print(target_vs[0])
 
     def loss_pi(self, targets, outputs):
-        # remove negative values from the output
-        outputs = torch.clamp(outputs, min=1e-8, max=1.0)
-        loss = -(targets * torch.log(outputs)).sum(dim=1)
-        return loss.mean()
+        # mean squared error
+        return torch.sum((targets - outputs) ** 2) / targets.size()[0]
 
     def loss_v(self, targets, outputs):
         loss = torch.sum((targets - outputs.view(-1)) ** 2) / targets.size()[0]
@@ -154,9 +154,4 @@ class Trainer:
             os.mkdir(folder)
 
         filepath = os.path.join(folder, filename)
-        torch.save(
-            {
-                "state_dict": self.new_model.state_dict(),
-            },
-            filepath,
-        )
+        torch.save(self.model.state_dict(), filepath)

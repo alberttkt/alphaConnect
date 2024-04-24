@@ -62,7 +62,7 @@ class ValueHead(nn.Module):
         return x
 
 
-class AlphaZeroModel(L.LightningModule):
+class AlphaZeroModelConnect4(L.LightningModule):
     def __init__(self):
         super().__init__()
         self.conv_layers = nn.Sequential(

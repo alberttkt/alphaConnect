@@ -112,7 +112,7 @@ class AlphaZeroAgent(Agent):
     def __init__(
         self,
         inner_agent: Agent = RandomAgent(),
-        iterations=10000,
+        iterations=200,
         temperature=1,
     ):
         self.iterations = iterations
