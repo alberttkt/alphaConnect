@@ -104,7 +104,7 @@ class AlphaZeroModelConnect4(L.LightningModule):
         x, y_policy, y_value = batch
         policy_pred, value_pred = self(x)
         # print(y_hat.shape, y.shape)
-        policy_loss = nn.functional.cross_entropy(policy_pred, y_policy)
+        policy_loss = nn.functional.mse_loss(policy_pred, y_policy)
 
         # Calculate value loss (MSE)
         value_loss = nn.functional.mse_loss(
@@ -113,7 +113,7 @@ class AlphaZeroModelConnect4(L.LightningModule):
 
         # Combine losses
         total_loss = (
-            policy_loss + 10 * value_loss
+            5 * policy_loss + value_loss
         )  # You might want to add a weighting factor here
 
         # Log losses

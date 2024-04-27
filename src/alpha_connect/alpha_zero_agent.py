@@ -138,8 +138,6 @@ class AlphaZeroAgent(Agent):
             # Simulation
             if not state.has_ended:
                 move_probabilities, value = self.inner_agent.play(state)
-                # rescale value from 0,1 to -1,1
-                value = 2 * value - 1
                 node.expand_node(state.player, move_probabilities)
                 player = state.player
             else:
