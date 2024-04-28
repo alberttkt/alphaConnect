@@ -7,7 +7,7 @@ import torch.optim as optim
 from tqdm import tqdm
 from copy import deepcopy
 
-from .alpha_zero_agent import AlphaZeroAgent
+from .alpha_zero_agent import AlphaZeroAgent, AlphaZeroTrainer
 from .neural_net_agent import NeuralNetAgent
 from .helper import state_to_supervised_input
 from .game_choice import GameChoice
@@ -25,7 +25,7 @@ class Trainer:
             for _ in range(self.num_players)
         ]
 
-    def exceute_episode(self):
+    def execute_episode(self):
         train_examples = []
         state = GameChoice.get_game().sample_initial_state()
 
@@ -69,25 +69,40 @@ class Trainer:
                 return ret, self.agents.index(agents[current_player])
 
     def learn(self):
+        best_loss = float("inf")
+        best_model = None
+        patience = 0
         for i in range(1, self.args["numIters"] + 1):
             print("{}/{}".format(i, self.args["numIters"]))
 
             train_examples = []
             winner_dict = {}
-            for eps in tqdm(range(self.args["numEps"])):
-                iteration_train_examples, winner_index = self.exceute_episode()
-                if winner_index in winner_dict:
-                    winner_dict[winner_index] += 1
-                else:
-                    winner_dict[winner_index] = 1
-                train_examples.extend(iteration_train_examples)
+            alphaZeroTrainer = AlphaZeroTrainer(
+                self.model,
+                nb_episodes=self.args["numEps"],
+                iterations=self.args["num_simulations"],
+                temperature=self.args["temperature"],
+            )
 
-            print("Winners: ", winner_dict)
+            results = alphaZeroTrainer.execute_episodes()
+            train_examples.extend(results)
+
             shuffle(train_examples)
-            self.train(train_examples)
+            loss = self.train(train_examples)
+            if loss < best_loss:
+                print(f"New best loss: {loss}")
+                best_loss = loss
+                best_model = deepcopy(self.model)
+            else:
+                patience += 1
+                if patience >= 100:
+                    print(f"Early stopping at iteration {i}")
+                    break
+            with open(self.args["loss_history_path"], "a") as f:
+                f.write(str(loss))
 
             filename = self.args["checkpoint_path"]
-            self.save_checkpoint(folder="../data", filename=filename)
+            self.save_checkpoint(folder=".", filename=filename)
 
             self.agents = self.agents[1::]
             self.agents.append(
@@ -133,13 +148,16 @@ class Trainer:
                 batch_idx += 1
 
             print()
-            print("Policy Loss", np.mean(pi_losses))
+            print(f"loss: {3*np.mean(pi_losses) + np.mean(v_losses)}")
+            print(f"Policy Loss", np.mean(pi_losses))
             print("Value Loss", np.mean(v_losses))
             print("Examples:")
             print(out_pi[0].detach())
             print(target_pis[0])
             print(out_v[0].detach())
             print(target_vs[0])
+
+            return 3 * np.mean(pi_losses) + np.mean(v_losses)
 
     def loss_pi(self, targets, outputs):
         # mean squared error
