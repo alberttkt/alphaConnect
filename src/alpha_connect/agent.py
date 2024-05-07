@@ -22,7 +22,7 @@ class Agent(ABC):
     def filter_moves(state, moves_proba_dict: dict[str, float]) -> dict[str, float]:
         res = {}
         for action in state.actions:
-            res[action] = moves_proba_dict.get(action.to_json(), 0)
+            res[action] = moves_proba_dict.get(action, 0)
         total = sum([math.exp(prob) for prob in res.values()])
         res = {k: math.exp(v) / total for k, v in res.items()}
         return res

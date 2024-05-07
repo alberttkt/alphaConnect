@@ -89,8 +89,7 @@ class MCTSAgent(Agent):
                 node = node.parent
 
         move_probabilities = {
-            int(child.action.to_json()): child.wins / child.visits
-            for child in root_node.children
+            child.action: child.wins / child.visits for child in root_node.children
         }
 
         # softmax

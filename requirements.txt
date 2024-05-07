@@ -1,4 +1,4 @@
-game @ git+https://github.com/jojolebarjos/board-game-simulator-python.git@b249c03974e12a6459af1994d3404478d26ce54f
+game @ git+https://github.com/jojolebarjos/board-game-simulator-python.git
 ipywidgets==8.1.2
 lightning==2.2.0.post0
 matplotlib==3.8.3

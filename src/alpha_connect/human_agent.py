@@ -11,7 +11,7 @@ class HumanAgent(Agent):
         if self.verbose:
             print(state)
 
-        d = {action.to_json(): 0.0 for action in state.actions}
+        d = {action: 0.0 for action in state.actions}
         if not len(self.__class__.next_moves) > 0:
             print("No move selected")
             return d

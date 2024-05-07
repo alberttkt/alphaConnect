@@ -9,7 +9,7 @@ class OneMoveAheadAgent(Agent):
         actions = list(state.actions)
         for action in actions:
             if action.sample_next_state().has_ended:
-                return {action.to_json(): 1.0}, 1
+                return {action: 1.0}, 1
         possible = set(actions)
         for action in actions:
             for action2 in action.sample_next_state().actions:
@@ -21,5 +21,6 @@ class OneMoveAheadAgent(Agent):
 
         nb_actions = len(possible)
         actions = list(possible)
-        d = {action.to_json(): 1.0 / nb_actions for action in actions}
+
+        d = {action: 1.0 / nb_actions for action in actions}
         return d, 1

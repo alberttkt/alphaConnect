@@ -2,7 +2,7 @@ import sys
 import torch
 from .game import Game
 import random
-from game import ConnectState
+from game import Connect4State
 from .game_choice import GameChoice
 
 
@@ -15,17 +15,17 @@ def show_board(state, file=sys.stdout):
         print(file=file)
 
 
-def play_game(agents, starting_state=None):
+def play_game(agents, starting_state=None, greedy=True):
     gamestate = Game(agents, starting_state)
     while not gamestate.has_ended():
-        gamestate = gamestate.play()
+        gamestate = gamestate.play(greedy=greedy)
     show_board(gamestate.state)
     return gamestate.reward()[0]
 
 
-def play_connect4_games(agent1, agent2, n=100, random_start_agent=True):
+def play_connect4_games(agent1, agent2, n=100, random_start_agent=True, greedy=True):
     previous_game = GameChoice.get_game()
-    GameChoice.set_game(ConnectState)
+    GameChoice.set_game(Connect4State)
     dict = {"agent1": 0, "agent2": 0, "draws": 0}
     agents = [agent1, agent2]
     for i in range(n):
@@ -34,9 +34,9 @@ def play_connect4_games(agent1, agent2, n=100, random_start_agent=True):
 
         if random_start_agent:
             if random.choice([True, False]):
-                result = play_game(agents)
+                result = play_game(agents, greedy=greedy)
             else:
-                result = play_game(agents[::-1])
+                result = play_game(agents[::-1], greedy=greedy)
                 result = -result
         else:
             result = play_game(agents)

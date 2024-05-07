@@ -1,8 +1,8 @@
-from game import ConnectState
+from game import Connect4State
 
 
 class GameChoice:
-    game = ConnectState
+    game = Connect4State
 
     @classmethod
     def set_game(cls, new_game):

@@ -227,7 +227,7 @@ class AlphaZeroTrainer:
         self.iterations = iterations
         self.temperature = temperature
 
-    def execute_episodes(self):
+    def execute_episodes(self, progress_bar):
         results = []
         game_states = [
             GameState(GameChoice.get_game().sample_initial_state())
@@ -235,10 +235,8 @@ class AlphaZeroTrainer:
         ]
         ended = 0
 
-        progress_bar = tqdm.tqdm(total=self.nb_episodes)
-
         while ended < self.nb_episodes:
-            progress_bar.update(ended)
+            progress_bar.update(0)
             for _ in range(self.iterations):
                 states = []
                 for game_state in game_states:
@@ -263,11 +261,9 @@ class AlphaZeroTrainer:
                     .to("mps")
                 )
                 policies, values = self.model(input_tensor)
-                # move to cpu
+
                 policies = policies.detach().cpu()
                 values = values.detach().cpu()
-
-                # take most of the time
 
                 for i, game_state in enumerate(game_states):
                     node = game_state.current_node
@@ -298,6 +294,7 @@ class AlphaZeroTrainer:
                 res = game_state.next_step(move_probabilities)
                 if res is not None:
                     ended += 1
+                    progress_bar.update(1)
                     results.extend(res)
                     game_state.reset()
                 else:
@@ -305,5 +302,4 @@ class AlphaZeroTrainer:
 
             game_states = next_game_states
 
-        progress_bar.close()
         return results

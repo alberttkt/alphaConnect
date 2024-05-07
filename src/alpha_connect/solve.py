@@ -1,12 +1,12 @@
 from functools import reduce
 import random
-from game import ConnectState
+from game import Connect4State
 
 
 WIDTH = 7
 HEIGHT = 6
 
-State = ConnectState
+State = Connect4State
 
 
 class Position:
@@ -157,7 +157,7 @@ def show_board(state):
         print()
 
 
-State = ConnectState
+State = Connect4State
 
 state = State.sample_initial_state()
 good_game = False

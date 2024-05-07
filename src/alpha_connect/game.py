@@ -17,8 +17,15 @@ class Game:
     def has_ended(self):
         return self.state.has_ended
 
-    def play(self):
+    def play(self, greedy=True):
         moves_proba_dict, _ = self.agents[self.state.player].play(self.state)
+        if not greedy:
+            return Game(
+                self.agents,
+                random.choices(
+                    list(moves_proba_dict.keys()), weights=moves_proba_dict.values()
+                )[0].sample_next_state(),
+            )
         max_proba = max(moves_proba_dict.values())
         moves = [
             move for move in moves_proba_dict if moves_proba_dict[move] == max_proba

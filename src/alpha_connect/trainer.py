@@ -6,13 +6,14 @@ import torch
 import torch.optim as optim
 from tqdm import tqdm
 from copy import deepcopy
+import concurrent.futures
 
 from .alpha_zero_agent import AlphaZeroAgent, AlphaZeroTrainer
 from .neural_net_agent import NeuralNetAgent
 from .helper import state_to_supervised_input
 from .game_choice import GameChoice
 
-from game import ConnectState
+from game import Connect4State
 
 
 class Trainer:
@@ -72,23 +73,48 @@ class Trainer:
         best_loss = float("inf")
         best_model = None
         patience = 0
-        for i in range(1, self.args["numIters"] + 1):
-            print("{}/{}".format(i, self.args["numIters"]))
+        start_index = 1
+        open(self.args["loss_history_path"], "a").close()
+        loss_file = open(self.args["loss_history_path"], "r")
+        loss_lines = loss_file.readlines()
+        if len(loss_lines) > 0:
+            start_index = len(loss_lines)
+            best_loss = min([float(x) for x in loss_lines])
+            patience = len(loss_lines) - loss_lines.index(str(best_loss) + "\n")
+            print(
+                f"Resuming training from iteration {start_index} with best loss {best_loss}"
+            )
+        loss_file.close()
+        lr = self.args["lr"]
+        lr_decay = self.args["lr_decay"]
+
+        for i in range(start_index, self.args["numIters"] + 1):
+            lr *= lr_decay
+            print("{}/{} with lr {}".format(i, self.args["numIters"], lr))
 
             train_examples = []
-            winner_dict = {}
             alphaZeroTrainer = AlphaZeroTrainer(
                 self.model,
                 nb_episodes=self.args["numEps"],
                 iterations=self.args["num_simulations"],
                 temperature=self.args["temperature"],
             )
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                progress = tqdm(range(self.args["numEps"] * self.args["numThreads"]))
+                futures = [
+                    executor.submit(alphaZeroTrainer.execute_episodes, progress)
+                    for _ in range(self.args["numThreads"])
+                ]
+                for future in concurrent.futures.as_completed(futures):
+                    results = future.result()
+                    train_examples.extend(results)
+            progress.close()
 
-            results = alphaZeroTrainer.execute_episodes()
-            train_examples.extend(results)
+            # results = alphaZeroTrainer.execute_episodes()
+            # train_examples.extend(results)
 
             shuffle(train_examples)
-            loss = self.train(train_examples)
+            loss = self.train(train_examples, lr)
             if loss < best_loss:
                 print(f"New best loss: {loss}")
                 best_loss = loss
@@ -99,7 +125,7 @@ class Trainer:
                     print(f"Early stopping at iteration {i}")
                     break
             with open(self.args["loss_history_path"], "a") as f:
-                f.write(str(loss))
+                f.write(str(loss) + "\n")
 
             filename = self.args["checkpoint_path"]
             self.save_checkpoint(folder=".", filename=filename)
@@ -109,9 +135,9 @@ class Trainer:
                 AlphaZeroAgent(NeuralNetAgent(self.model), self.args["num_simulations"])
             )
 
-    def train(self, examples):
+    def train(self, examples, lr):
         self.model = deepcopy(self.model)
-        optimizer = optim.Adam(self.model.parameters(), lr=5e-4)
+        optimizer = optim.Adam(self.model.parameters(), lr=lr)
         pi_losses = []
         v_losses = []
 
@@ -148,9 +174,10 @@ class Trainer:
                 batch_idx += 1
 
             print()
-            print(f"loss: {3*np.mean(pi_losses) + np.mean(v_losses)}")
-            print(f"Policy Loss", np.mean(pi_losses))
+            print(f"Loss: {3*np.mean(pi_losses) + np.mean(v_losses)}")
+            print(f"Policy Loss", 3 * np.mean(pi_losses))
             print("Value Loss", np.mean(v_losses))
+            print(f"{batch_idx} batches processed")
             print("Examples:")
             print(out_pi[0].detach())
             print(target_pis[0])
