@@ -4,10 +4,11 @@ import time
 
 import numpy as np
 import torch
-import tqdm
+from tqdm import tqdm
+
+from .chinese_checkers_helper import show_board, evaluate_chinese_checkers
 
 from .game_choice import GameChoice
-from .helper import state_to_supervised_input
 
 from .agent import Agent
 from .random_agent import RandomAgent
@@ -86,7 +87,7 @@ class MCTSNode:
             )
             probs = counts / counts.sum()
             a = {
-                action.to_json(): prob
+                action: prob
                 for action, prob in zip(action_to_visit_counts.keys(), probs)
             }
 
@@ -174,22 +175,24 @@ class GameState:
         self.current_node = node
 
     def next_step(self, proba_distribution):
-        action_probs_list = [proba_distribution.get(i, 0) for i in range(7)]
+        state = self.state
+        action_probs_list = [
+            proba_distribution.get(action, 0) for action in state.actions
+        ]
         self.results.append(
             (
-                state_to_supervised_input(self.state),
+                self.state,
                 self.state.player,
                 action_probs_list,
             )
         )
+
         # sample next state
-        action_int = random.choices(
+        action = random.choices(
             list(proba_distribution.keys()), weights=proba_distribution.values()
         )[0]
-        for action in self.state.actions:
-            if action.to_json() == action_int:
-                self.state = action.sample_next_state()
-                break
+
+        self.state = action.sample_next_state()
 
         if self.state.has_ended:
             return self.handle_results(self.state)
@@ -201,8 +204,9 @@ class GameState:
 
     def handle_results(self, final_state):
         res = []
+
         for state, player, proba_distribution in self.results:
-            reward = final_state.reward[player]
+            reward = GameChoice.get_reward(final_state, player)
             res.append((state, proba_distribution, reward))
 
         return res
@@ -221,23 +225,38 @@ class GameState:
 
 
 class AlphaZeroTrainer:
-    def __init__(self, model, nb_episodes=1000, iterations=200, temperature=1):
+    def __init__(
+        self,
+        model,
+        nb_episodes=100,
+        iterations=200,
+        temperature=1,
+        max_game_length=1000,
+    ):
         self.model = model
         self.nb_episodes = nb_episodes
         self.iterations = iterations
         self.temperature = temperature
+        self.max_game_length = max_game_length
 
-    def execute_episodes(self, progress_bar):
+    def execute_episodes(self):
+        progress_bar = tqdm(range(self.nb_episodes))
         results = []
+
         game_states = [
             GameState(GameChoice.get_game().sample_initial_state())
             for _ in range(self.nb_episodes)
         ]
         ended = 0
+        game_length = 0
+        while ended < self.nb_episodes and game_length < self.max_game_length:
+            # print(f"Move {game_length}/{self.max_game_length}")
+            progress_bar.set_description(f"(Game length:{game_length})")
+            game_length += 1
 
-        while ended < self.nb_episodes:
-            progress_bar.update(0)
             for _ in range(self.iterations):
+                # start = time.time()
+
                 states = []
                 for game_state in game_states:
                     node = game_state.root
@@ -254,30 +273,46 @@ class AlphaZeroTrainer:
                     else:
                         states.append(GameChoice.get_game().sample_initial_state())
 
+                # print(f"Time to select: {time.time()-start}")
+                # start = time.time()
+
+                input_list = [
+                    torch.stack(GameChoice.get_state_to_supervised_input(state))
+                    for state in states
+                ]
+
+                # print(f"Time to prepare input: {time.time()-start}")
+                # start = time.time()
+
                 input_tensor = (
-                    torch.stack([state_to_supervised_input(state) for state in states])
+                    torch.cat(input_list)
                     .type(torch.float32)
-                    .view(-1, 3, 6, 7)
+                    .view(GameChoice.get_input_shape())
                     .to("mps")
                 )
-                policies, values = self.model(input_tensor)
 
-                policies = policies.detach().cpu()
+                output, values = self.model(input_tensor)
+
+                output = output.detach().cpu()
                 values = values.detach().cpu()
+
+                # print(f"Time to run model: {time.time()-start}")
+                # start = time.time()
+
+                policies = GameChoice.model_output_to_proba_dict(output, states)
+
+                # print(f"Time to prepare policies: {time.time()-start}")
+                # start = time.time()
 
                 for i, game_state in enumerate(game_states):
                     node = game_state.current_node
                     state = node.state
 
-                    policy = policies[i].flatten()
                     value = float(values[i])
                     if not state.has_ended:
                         # policy to dict
-                        d = {}
-                        for i in state.actions:
-                            d[i] = policy[i.to_json()]
 
-                        node.expand_node(state.player, d)
+                        node.expand_node(state.player, policies[i])
                         player = state.player
                     else:
                         value = state.reward[game_state.state.player]
@@ -288,7 +323,10 @@ class AlphaZeroTrainer:
                         node = node.parent
                     game_state.root.update(value, player)
 
+                # print(f"Time to update: {time.time()-start}")
+
             next_game_states = []
+
             for game_state in game_states:
                 move_probabilities = game_state.root.get_distribution(self.temperature)
                 res = game_state.next_step(move_probabilities)
@@ -302,4 +340,11 @@ class AlphaZeroTrainer:
 
             game_states = next_game_states
 
+        if i == self.max_game_length:
+            print("Max game length reached")
+
+        for game_state in game_states:
+            results.extend(game_state.handle_results(game_state.state))
+
+        progress_bar.close()
         return results

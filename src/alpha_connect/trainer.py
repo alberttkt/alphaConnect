@@ -10,10 +10,7 @@ import concurrent.futures
 
 from .alpha_zero_agent import AlphaZeroAgent, AlphaZeroTrainer
 from .neural_net_agent import NeuralNetAgent
-from .helper import state_to_supervised_input
 from .game_choice import GameChoice
-
-from game import Connect4State
 
 
 class Trainer:
@@ -25,49 +22,6 @@ class Trainer:
             AlphaZeroAgent(NeuralNetAgent(model), self.args["num_simulations"])
             for _ in range(self.num_players)
         ]
-
-    def execute_episode(self):
-        train_examples = []
-        state = GameChoice.get_game().sample_initial_state()
-
-        agents = self.agents.copy()
-        random.shuffle(agents)
-
-        i = 0
-
-        while True:
-            current_player = state.player
-
-            action_probs, _ = agents[current_player].play(state)
-
-            network_input = state_to_supervised_input(state)
-            int_action_probs = {k.to_json(): v for k, v in action_probs.items()}
-            action_probs_list = [int_action_probs.get(i, 0) for i in range(7)]
-            train_examples.append((network_input, current_player, action_probs_list))
-
-            action = random.choices(
-                list(action_probs.keys()), weights=action_probs.values()
-            )[0]
-
-            state = action.sample_next_state()
-            reward = state.reward
-
-            i += 1
-
-            if state.has_ended:
-                ret = []
-                for (
-                    hist_state,
-                    hist_current_player,
-                    hist_action_probs,
-                ) in train_examples:
-                    # [Board, actionProbabilities, Reward]
-                    ret.append(
-                        (hist_state, hist_action_probs, reward[hist_current_player])
-                    )
-
-                # print(f"Game ended after {i} steps")
-                return ret, self.agents.index(agents[current_player])
 
     def learn(self):
         best_loss = float("inf")
@@ -98,17 +52,19 @@ class Trainer:
                 nb_episodes=self.args["numEps"],
                 iterations=self.args["num_simulations"],
                 temperature=self.args["temperature"],
+                max_game_length=self.args["max_game_length"],
             )
-            with concurrent.futures.ThreadPoolExecutor() as executor:
-                progress = tqdm(range(self.args["numEps"] * self.args["numThreads"]))
-                futures = [
-                    executor.submit(alphaZeroTrainer.execute_episodes, progress)
-                    for _ in range(self.args["numThreads"])
-                ]
-                for future in concurrent.futures.as_completed(futures):
-                    results = future.result()
-                    train_examples.extend(results)
-            progress.close()
+            # with concurrent.futures.ThreadPoolExecutor() as executor:
+
+            # futures = [
+            # executor.submit(alphaZeroTrainer.execute_episodes, progress)
+            # for _ in range(self.args["numThreads"])
+            # ]
+            # for future in concurrent.futures.as_completed(futures):
+            # results = future.result()
+            results = alphaZeroTrainer.execute_episodes()
+            train_examples.extend(results)
+            # progress.close()
 
             # results = alphaZeroTrainer.execute_episodes()
             # train_examples.extend(results)
@@ -121,7 +77,7 @@ class Trainer:
                 best_model = deepcopy(self.model)
             else:
                 patience += 1
-                if patience >= 100:
+                if patience >= 350:
                     print(f"Early stopping at iteration {i}")
                     break
             with open(self.args["loss_history_path"], "a") as f:
@@ -150,18 +106,36 @@ class Trainer:
                 sample_ids = np.random.randint(
                     len(examples), size=self.args["batch_size"]
                 )
-                boards, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
+                states, pis, vs = list(zip(*[examples[i] for i in sample_ids]))
+
+                boards = [
+                    GameChoice.get_state_to_supervised_input(state) for state in states
+                ]
+
+                boards = [x for xs in boards for x in xs]
                 boards = torch.FloatTensor(np.array(boards).astype(np.float64))
 
+                max_pis = max([len(pi) for pi in pis])
+                pis = [pi + [0] * (max_pis - len(pi)) for pi in pis]
                 target_pis = torch.FloatTensor(np.array(pis))
+                # target_pis = pis
                 target_vs = torch.FloatTensor(np.array(vs).astype(np.float64))
 
                 # compute output
-                model_input = boards.reshape(-1, 3, 6, 7).to("mps")
+                model_input = boards.reshape(GameChoice.get_input_shape()).to("mps")
                 out_pi, out_v = self.model(model_input)
                 out_pi, out_v = out_pi.to("cpu"), out_v.to("cpu")
+
+                out_pi = GameChoice.model_output_to_policy(out_pi, states)
+                out_pi = [pi + [0] * (max_pis - len(pi)) for pi in out_pi]
+                out_pi = torch.FloatTensor(np.array(out_pi))
+
+                out_v = GameChoice.model_value_output_to_policy(out_v, states)
+                out_v = out_v
+
                 l_pi = self.loss_pi(target_pis, out_pi)
                 l_v = self.loss_v(target_vs, out_v)
+
                 total_loss = l_pi + l_v
 
                 pi_losses.append(float(l_pi))
@@ -179,9 +153,9 @@ class Trainer:
             print("Value Loss", np.mean(v_losses))
             print(f"{batch_idx} batches processed")
             print("Examples:")
-            print(out_pi[0].detach())
+            print(out_pi[0])
             print(target_pis[0])
-            print(out_v[0].detach())
+            print(out_v[0])
             print(target_vs[0])
 
             return 3 * np.mean(pi_losses) + np.mean(v_losses)

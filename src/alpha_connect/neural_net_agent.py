@@ -1,6 +1,6 @@
 import torch
 from .agent import Agent
-from .helper import state_to_supervised_input
+from .game_choice import GameChoice
 from .model import AlphaZeroModelConnect4
 from torch import nn
 
@@ -8,7 +8,7 @@ from torch import nn
 class NeuralNetAgent(Agent):
     def __init__(
         self,
-        model: AlphaZeroModelConnect4 = None,
+        model=None,
     ):
         if model is None:
             model = AlphaZeroModelConnect4.load_from_checkpoint(
@@ -18,11 +18,16 @@ class NeuralNetAgent(Agent):
 
     def _play_logic(self, state):
         self.model.eval()
-        input = state_to_supervised_input(state)
+        inp = GameChoice.get_state_to_supervised_input(state)
         y_hat, value = self.model(
-            torch.tensor(input, device="mps").type(torch.float32).view(1, 3, 6, 7)
+            torch.stack(inp)
+            .to("mps")
+            .type(torch.float32)
+            .view(GameChoice.get_input_shape())
         )
-        distribution = nn.functional.softmax(y_hat, dim=1).flatten()
-        d = {i: distribution[i].item() for i in range(len(distribution))}
+        # TODO: fix
+        distribution = GameChoice.model_output_to_proba_dict(y_hat, [state])[0]
+
         self.model.train()
-        return d, float(value)
+
+        return distribution, float(max(value))

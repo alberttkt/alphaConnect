@@ -9,5 +9,13 @@ from .human_agent import HumanAgent
 from .one_move_ahead_agent import OneMoveAheadAgent
 from .game import Game
 from .helper import *
-from .model import AlphaZeroModelConnect4, MyDataset
+from .model import (
+    AlphaZeroModelConnect4,
+    MyDataset,
+    AlphaZeroModelChineseCheckers,
+    AlphaZeroModelBounce,
+)
 from .game_choice import GameChoice
+from .chinese_checkers_helper import *
+from .connect4_helper import *
+from .bounce_helper import *

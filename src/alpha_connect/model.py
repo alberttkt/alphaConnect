@@ -23,8 +23,8 @@ class ResidualBlock(nn.Module):
     def __init__(self, channels=256):
         super().__init__()
         self.n = nn.Sequential(
-            ConvBlock(channels),
-            ConvBlock(channels),
+            ConvBlock(channels, channels),
+            ConvBlock(channels, channels),
         )
         self.r = nn.ReLU()
 
@@ -33,10 +33,10 @@ class ResidualBlock(nn.Module):
 
 
 class PolicyHead(nn.Module):
-    def __init__(self, in_channels=256, num_moves=7):
+    def __init__(self, in_channels=256, linear_input=84, num_moves=7):
         super().__init__()
         self.conv = ConvBlock(in_channels, 2, kernel_size=1, stride=1)
-        self.fc = nn.Linear(84, num_moves)
+        self.fc = nn.Linear(linear_input, num_moves)
 
     def forward(self, x):
         x = self.conv(x)
@@ -45,13 +45,13 @@ class PolicyHead(nn.Module):
 
 
 class ValueHead(nn.Module):
-    def __init__(self, in_channels=256):
+    def __init__(self, linear_input=42, in_channels=256):
         super().__init__()
         self.conv = ConvBlock(in_channels, 1, kernel_size=1, stride=1)
         self.fc1 = nn.Linear(
-            42, 256
+            linear_input, in_channels
         )  # Assuming global average pooling is done before this layer
-        self.fc2 = nn.Linear(256, 1)
+        self.fc2 = nn.Linear(in_channels, 1)
         self.relu = nn.ReLU()
 
     def forward(self, x):
@@ -90,6 +90,136 @@ class AlphaZeroModelConnect4(L.LightningModule):
 
         self.policy_head = PolicyHead()
         self.value_head = ValueHead()
+        self.save_hyperparameters()
+
+    def forward(self, x):
+        x = self.conv_layers(x)
+        # flat = x.view(x.size(0), -1)
+        # print(flat.shape)
+        policy = self.policy_head(x)
+        value = self.value_head(x)
+        return policy, value
+
+    def training_step(self, batch, batch_idx):
+        x, y_policy, y_value = batch
+        policy_pred, value_pred = self(x)
+        # print(y_hat.shape, y.shape)
+        policy_loss = nn.functional.mse_loss(policy_pred, y_policy)
+
+        # Calculate value loss (MSE)
+        value_loss = nn.functional.mse_loss(
+            value_pred.view(-1), y_value.float()
+        )  # Ensure y_value is float for MSE
+
+        # Combine losses
+        total_loss = (
+            5 * policy_loss + value_loss
+        )  # You might want to add a weighting factor here
+
+        # Log losses
+        self.log("policy_loss", policy_loss, on_epoch=True, prog_bar=True, logger=True)
+        self.log("value_loss", value_loss, on_epoch=True, prog_bar=True, logger=True)
+        self.log("total_loss", total_loss, on_epoch=True, prog_bar=True, logger=True)
+
+        return total_loss
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.parameters(), lr=1e-4, weight_decay=1e-5)
+        scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+        return [optimizer], [scheduler]
+
+
+class AlphaZeroModelChineseCheckers(L.LightningModule):
+    def __init__(self, x=200):
+        super().__init__()
+        self.conv_layers = nn.Sequential(
+            ConvBlock(5, out_channels=x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+        )
+
+        self.policy_head = PolicyHead(in_channels=x, linear_input=578, num_moves=121)
+        self.value_head = ValueHead(linear_input=289, in_channels=x)
+        self.save_hyperparameters()
+
+    def forward(self, x):
+        x = self.conv_layers(x)
+        # flat = x.view(x.size(0), -1)
+        # print(flat.shape)
+        policy = self.policy_head(x)
+        value = self.value_head(x)
+        return policy, value
+
+    def training_step(self, batch, batch_idx):
+        x, y_policy, y_value = batch
+        policy_pred, value_pred = self(x)
+        # print(y_hat.shape, y.shape)
+        policy_loss = nn.functional.mse_loss(policy_pred, y_policy)
+
+        # Calculate value loss (MSE)
+        value_loss = nn.functional.mse_loss(
+            value_pred.view(-1), y_value.float()
+        )  # Ensure y_value is float for MSE
+
+        # Combine losses
+        total_loss = (
+            5 * policy_loss + value_loss
+        )  # You might want to add a weighting factor here
+
+        # Log losses
+        self.log("policy_loss", policy_loss, on_epoch=True, prog_bar=True, logger=True)
+        self.log("value_loss", value_loss, on_epoch=True, prog_bar=True, logger=True)
+        self.log("total_loss", total_loss, on_epoch=True, prog_bar=True, logger=True)
+
+        return total_loss
+
+    def configure_optimizers(self):
+        optimizer = optim.Adam(self.parameters(), lr=1e-4, weight_decay=1e-5)
+        scheduler = StepLR(optimizer, step_size=30, gamma=0.1)
+        return [optimizer], [scheduler]
+
+
+class AlphaZeroModelBounce(L.LightningModule):
+    def __init__(self, x=256):
+        super().__init__()
+        self.conv_layers = nn.Sequential(
+            ConvBlock(6, out_channels=x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+            ResidualBlock(x),
+        )
+
+        self.policy_head = PolicyHead(
+            in_channels=x, linear_input=108, num_moves=6 * 9 + 1
+        )
+        self.value_head = ValueHead(linear_input=54, in_channels=x)
         self.save_hyperparameters()
 
     def forward(self, x):
